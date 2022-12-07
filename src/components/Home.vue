@@ -2,28 +2,55 @@
 .line
   label(for='add') Add coin
   input#add.line__price(v-model='coin' @keydown.enter='addCoin')
-.coins
-  .line(v-for='c,idx in coins')
-    label(:for='c.c') {{c.c}}
-      span(class='text-xs ml-2 text-red-600 align-middle hover:text-white' @click='remove(idx)') x
+  button(@click='addCoin') +
+ul.ul
+  li.line(v-for='c,i in coins')
+    label.flex.items-center(:for='c.c') {{c.c}}
+      span.cursor-pointer(class='text-xs ml-2 text-red-600 hover:text-white' @click='remove(i)') x
     .line__price
       input(v-model='c.v' :id='c.c' type='Number')
       span {{c.p}}
 .line
   p(ref='cash') Your cash: {{Math.trunc(cash)}}
+  button.mr-1
+    img(src='../assets/chart.png' @click='isChart=!isChart')
   p.underline.italic.cursor-pointer(@click='refresh') refresh
-ul.history(v-if="typeof errors==='object'")
-  li(v-for='e in errors' :key='e.coin')
-    p {{e.coin}}: {{e.error}}
-p(v-if="typeof errors==='string'") {{errors}}
-ul.history(v-if='errors.length==0')
-  li.line(v-for='chunk,idx in history')
-    p {{formatDate(chunk.date)}}
-    p {{Math.trunc(chunk.cash) || 0}} {{calcDif(idx)}}
-      span(class='text-xs ml-2 text-red-600 align-middle hover:text-white' @click='clear(idx)') x
+.chart(v-if='isChart')
+  Line( id="my-chart-id" :data="chartData" :options='chartOptions')
+div(v-else)
+  ul.ul(v-if="typeof errors==='object'")
+    li(v-for='e in errors' :key='e.coin')
+      p {{e.coin}}: {{e.error}}
+  p(v-if="typeof errors==='string'") {{errors}}
+  ul.ul(v-if='history.length>0')
+    li.line.w-full.cursor-pointer(
+      v-for='h in history',
+      :key='h.date',
+      class="hover:underline",
+      :class="changeInBalance(h.date).at(0)=='-'?'text-red':'text-green'" @click='backToDate(h.date)'
+    )
+      p.text-sm {{formatDate(h.date)}}
+      span.ml-auto {{Math.trunc(h.cash) || 0}} {{changeInBalance(h.date)}}
+      span(class='cursor-pointer text-xs ml-2 text-red-600 hover:text-white' @click.self='clear(h.date)') x
 </template>
 
 <script>
+import { Line } from "vue-chartjs";
+import {
+  Chart as ChartJS,
+  LinearScale,
+  PointElement,
+  LineElement,
+  CategoryScale,
+  Tooltip,
+} from "chart.js";
+ChartJS.register(
+  PointElement,
+  LineElement,
+  CategoryScale,
+  LinearScale,
+  Tooltip
+);
 export default {
   data: () => ({
     coin: "",
@@ -31,11 +58,13 @@ export default {
     cash: 0,
     history: [],
     otherErrors: [],
+    isChart: false,
   }),
   methods: {
     async refresh() {
       this.cash = 0;
       this.otherErrors = [];
+      this.errors = [];
       await Promise.all(
         this.coins.map(async (c, idx) => {
           await fetch(
@@ -66,69 +95,71 @@ export default {
                 });
             });
         })
-      );
-      this.history.push({
-        date: new Date(),
-        wallet: this.coins,
-        cash: this.cash,
+      ).finally(() => {
+        this.history.push({
+          date: new Date(),
+          // coins: JSON.parse(JSON.stringify(this.coins)),
+          coins: this.coins,
+          cash: this.cash,
+        });
+        localStorage.setItem("dw-history", JSON.stringify(this.history));
       });
-      localStorage.setItem("dw-history", JSON.stringify(this.history));
     },
     addCoin() {
       if (this.coin.length > 0) {
         this.$refs.cash.focus();
         this.coins.push({ c: this.coin.toUpperCase(), v: 0 });
-        localStorage.setItem("dw-coins", JSON.stringify(this.coins));
         this.coin = "";
-        this.errors = "";
+        this.errors = [];
       } else {
         this.errors = "Enter coin name";
       }
     },
+    backToDate(d) {
+      let x = this.history.find((h) => h.date == d);
+      x
+        ? ((this.coins = JSON.parse(JSON.stringify(x.coins))),
+          (this.otherErrors = ""))
+        : (this.otherErrors = "Cannot find this date");
+      console.log(d, x);
+    },
     remove(idx) {
       this.coins = this.coins.filter((c, i) => i !== idx);
     },
-    clear(idx) {
-      this.history = this.history.filter((h, i) => i !== idx);
+    clear(d) {
+      this.history = this.history.filter((h) => h.date !== d);
+      localStorage.setItem("dw-history", JSON.stringify(this.history));
     },
     formatDate(h) {
       const d = new Date(h);
       let m = d.getMinutes();
       return (
-        d.getDate() +
+        d.getMonth() +
+        1 +
         "." +
-        (d.getMonth() + 1) +
-        "-" +
+        d.getDate() +
+        "/" +
         d.getHours() +
         ":" +
         (m < 10 ? "0" + m : m)
       );
     },
-    calcDif(idx) {
-      if (idx == 0) {
-        return "";
-      } else {
-        let p =
-          (this.history[idx].cash / this.history[idx - 1].cash - 1).toFixed(4) *
-          100;
+    changeInBalance(d) {
+      // debugger;
+      if (d) {
+        let i = this.history.findIndex((h) => d == h.date);
+        if (i == 0) return "";
+        let p = (
+          (this.history[i].cash / this.history[i - 1].cash - 1) *
+          100
+        ).toFixed(2);
         return p > 0 ? "+" + p + "%" : p + "%";
+      } else {
+        return "";
       }
     },
   },
-  watch: {
-    coins: {
-      handler(val) {
-        localStorage.setItem("dw-coins", JSON.stringify(val));
-      },
-      deep: true,
-    },
-    history: {
-      handler(val) {
-        localStorage.setItem("dw-history", JSON.stringify(val));
-      },
-      deep: true,
-    },
-  },
+  watch: {},
   computed: {
     errors: {
       get() {
@@ -142,24 +173,64 @@ export default {
         this.otherErrors = val;
       },
     },
+    chartData() {
+      let labels = this.history.map((h) => this.formatDate(h.date).split('/')[0]);
+      let datasets = [
+        {
+          backgroundColor: "#000",
+          borderColor: "#fa0",
+          color: "#fa0",
+          data: this.history.map((h) => h.cash),
+        },
+      ];
+      return { labels, datasets };
+    },
+    chartOptions() {
+      return {
+        responsive: true,
+        // maintainAspectRatio: false,
+        scales: {
+          x: {
+            ticks: {
+              color: "#fff",
+              borderColor: "red",
+              font: {
+                size: 8,
+              },
+            },
+          },
+          y: {
+            ticks: {
+              color: "#fff",
+              borderColor: "green",
+              font: {
+                size: 8,
+              },
+            },
+          },
+        },
+      };
+    },
   },
   mounted() {
     const history = JSON.parse(localStorage.getItem("dw-history"));
-    history && (this.history = history);
-    const coins = JSON.parse(localStorage.getItem("dw-coins"));
-    coins && (this.coins = coins);
+    history?.length > 0 &&
+      ((this.history = history),
+      (this.coins = history.at(-1).coins),
+      (this.cash = history.at(-1).cash));
   },
+  components: { Line },
 };
 </script>
 
 <style>
-.coins {
+.ul {
   @apply max-h-[200px] overflow-y-auto;
 }
-.coins::-webkit-scrollbar {
+.ul::-webkit-scrollbar {
   @apply bg-transparent w-[3px];
 }
-.coins::-webkit-scrollbar-thumb {
+.ul::-webkit-scrollbar-thumb {
   @apply bg-pink-800;
 }
 input {
@@ -171,7 +242,7 @@ input {
 .line__price {
   @apply w-[160px] flex justify-between;
 }
-.history {
-  @apply max-h-[300px] overflow-y-auto;
+.chart {
+  @apply w-[260px] h-[200px];
 }
 </style>
