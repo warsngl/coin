@@ -1,4 +1,5 @@
 <template lang="pug">
+button.share(@click='share') Share
 .line
   label(for='add') Add coin
   input#add.line__price(v-model='coin' @keydown.enter='addCoin')
@@ -37,20 +38,15 @@ div(v-else)
 <script>
 import { Line } from "vue-chartjs";
 import {
-  Chart as ChartJS,
+  Chart,
   LinearScale,
   PointElement,
   LineElement,
   CategoryScale,
   Tooltip,
+  Legend,
 } from "chart.js";
-ChartJS.register(
-  PointElement,
-  LineElement,
-  CategoryScale,
-  LinearScale,
-  Tooltip
-);
+Chart.register(PointElement, LineElement, CategoryScale, LinearScale, Tooltip, Legend);
 export default {
   data: () => ({
     coin: "",
@@ -58,7 +54,7 @@ export default {
     cash: 0,
     history: [],
     otherErrors: [],
-    isChart: false,
+    isChart: true,
   }),
   methods: {
     async refresh() {
@@ -118,8 +114,7 @@ export default {
     backToDate(d) {
       let x = this.history.find((h) => h.date == d);
       x
-        ? ((this.coins = JSON.parse(JSON.stringify(x.coins))),
-          (this.otherErrors = ""))
+        ? ((this.coins = JSON.parse(JSON.stringify(x.coins))), (this.otherErrors = ""))
         : (this.otherErrors = "Cannot find this date");
       console.log(d, x);
     },
@@ -149,14 +144,16 @@ export default {
       if (d) {
         let i = this.history.findIndex((h) => d == h.date);
         if (i == 0) return "";
-        let p = (
-          (this.history[i].cash / this.history[i - 1].cash - 1) *
-          100
-        ).toFixed(2);
+        let p = ((this.history[i].cash / this.history[i - 1].cash - 1) * 100).toFixed(2);
         return p > 0 ? "+" + p + "%" : p + "%";
       } else {
         return "";
       }
+    },
+    share() {
+      let sharedData = this.coins.map((c) => c.c + "=" + c.v).join("&");
+      console.log(sharedData);
+      navigator.clipboard.writeText("https://warsngl.github.io/coin/copy?" + sharedData);
     },
   },
   watch: {},
@@ -174,12 +171,15 @@ export default {
       },
     },
     chartData() {
-      let labels = this.history.map((h) => this.formatDate(h.date).split('/')[0]);
+      let labels = this.history.map((h) => this.formatDate(h.date));
+      // let coins=this.history[0].coins.map(c=>c.c)
+      // let data=coins.map(c=>)
       let datasets = [
         {
+          label: "1",
           backgroundColor: "#000",
           borderColor: "#fa0",
-          color: "#fa0",
+          color: "#fff",
           data: this.history.map((h) => h.cash),
         },
       ];
@@ -193,19 +193,41 @@ export default {
           x: {
             ticks: {
               color: "#fff",
-              borderColor: "red",
+              // borderColor: "red",
+              font: {
+                size: 8,
+              },
+              callback(value, index, ticks) {
+                return this.getLabelForValue(value).split("/")[0];
+              },
+            },
+          },
+          y: {
+            // min: 0,
+            // max: 100,
+            ticks: {
+              color: "#fff",
+              borderColor: "green",
+              // stepSize: 50,
               font: {
                 size: 8,
               },
             },
           },
-          y: {
-            ticks: {
+        },
+        plugins: {
+          // tooltip: {
+          //   callbacks: {
+          //     label: function (context) {
+          //       console.log(context)
+          //       return context;
+          //     },
+          //   },
+          // },
+          legend: {
+            labels: {
+              usePointStyle: true,
               color: "#fff",
-              borderColor: "green",
-              font: {
-                size: 8,
-              },
             },
           },
         },
@@ -244,5 +266,8 @@ input {
 }
 .chart {
   @apply w-[260px] h-[200px];
+}
+.share {
+  @apply fixed bottom-2 left-2;
 }
 </style>
